@@ -1800,18 +1800,10 @@ class TransformerBlockLlama(TransformerBlock):
         seqlen_current = 1  # Decoding one token at a time
         seqlen_total = self.start_pos + 1
 
-        RMSNorm_x = RMSNorm(self.x, self.SANorm)
-
-        xq_gpu = F.linear(RMSNorm_x, self.wq)
-        xk_gpu = F.linear(RMSNorm_x, self.wk)
-        xv_gpu = F.linear(RMSNorm_x, self.wv)
-        compare(xq_gpu[0][0], self.xq[0][0], "xq")
-        compare(xk_gpu[0][0], self.xk[0][0], "xk")
-        compare(xv_gpu[0][0], self.xv[0][0], "xv")
-
-        xq_gpu = xq_gpu.reshape(bsz, seqlen_current, self.n_heads, self.head_dim)
-        xk_gpu = xk_gpu.reshape(bsz, seqlen_current, self.n_kv_heads, self.head_dim)
-        xv_gpu = xv_gpu.reshape(bsz, seqlen_current, self.n_kv_heads, self.head_dim)
+        # Use pre-computed q, k, v and apply rotary embeddings as the final GPU step.
+        xq_gpu = self.xq.reshape(bsz, seqlen_current, self.n_heads, self.head_dim)
+        xk_gpu = self.xk.reshape(bsz, seqlen_current, self.n_kv_heads, self.head_dim)
+        xv_gpu = self.xv.reshape(bsz, seqlen_current, self.n_kv_heads, self.head_dim)
 
         xq_gpu, xk_gpu = apply_rotary_emb(xq_gpu, xk_gpu, self.freqs_cis)
         
