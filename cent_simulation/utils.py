@@ -61,6 +61,7 @@ def get_args():
     parser.add_argument("--seqlen", type=int, help="specify seqlen for only trace mode", default=4096)
     parser.add_argument("--trace-file", help="Name of generated trace file", default="null.log")
     parser.add_argument("--inter-device-attention", action="store_true")
+    parser.add_argument("--no-weights", action="store_true", help="Run simulation with random dummy data instead of a model file.")
     args = parser.parse_args()
     return args
 
