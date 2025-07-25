@@ -1800,13 +1800,11 @@ class TransformerBlockLlama(TransformerBlock):
         seqlen_current = 1  # Decoding one token at a time
         seqlen_total = self.start_pos + 1
 
-        # Use pre-computed q, k, v and apply rotary embeddings as the final GPU step.
+        # Use pre-computed, post-rotary-embedding values from the cache 
+        # as the constant inputs from the GPU.
         xq_gpu = self.xq.reshape(bsz, seqlen_current, self.n_heads, self.head_dim)
-        xk_gpu = self.xk.reshape(bsz, seqlen_current, self.n_kv_heads, self.head_dim)
-        xv_gpu = self.xv.reshape(bsz, seqlen_current, self.n_kv_heads, self.head_dim)
-
-        freqs_cis = self.freqs_cis[self.start_pos : self.start_pos + seqlen_current]
-        xq_gpu, xk_gpu = apply_rotary_emb(xq_gpu, xk_gpu, freqs_cis)
+        xk_gpu = self.cache_k[:bsz, self.start_pos : self.start_pos + seqlen_current, :, :]
+        xv_gpu = self.cache_v[:bsz, self.start_pos : self.start_pos + seqlen_current, :, :]
         
         if self.pim_compute:
             # Steps 5-10: AiMX-side processing
