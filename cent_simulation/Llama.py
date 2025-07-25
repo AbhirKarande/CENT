@@ -1805,7 +1805,8 @@ class TransformerBlockLlama(TransformerBlock):
         xk_gpu = self.xk.reshape(bsz, seqlen_current, self.n_kv_heads, self.head_dim)
         xv_gpu = self.xv.reshape(bsz, seqlen_current, self.n_kv_heads, self.head_dim)
 
-        xq_gpu, xk_gpu = apply_rotary_emb(xq_gpu, xk_gpu, self.freqs_cis)
+        freqs_cis = self.freqs_cis[self.start_pos : self.start_pos + seqlen_current]
+        xq_gpu, xk_gpu = apply_rotary_emb(xq_gpu, xk_gpu, freqs_cis)
         
         if self.pim_compute:
             # Steps 5-10: AiMX-side processing
