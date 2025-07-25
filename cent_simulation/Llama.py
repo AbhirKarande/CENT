@@ -1237,7 +1237,8 @@ class TransformerBlockLlama(TransformerBlock):
                             dim = ((channel % channels_per_head) % channels_per_row_offset) * self.num_banks + bank
                             if (channel % channels_per_head) // channels_per_row_offset == rows_per_seq - 1:
                                 row_offset = rows_per_seq - 1
-                                self.WR_ABK_only_trace(channel, self.cache_v_row_index + row_offset // rows_per_seq_iteration, 1)
+                                if self.trace_attention and channel < self.num_channels:
+                                    self.WR_ABK_only_trace(channel, self.cache_v_row_index + row_offset // rows_per_seq_iteration, 1)
             
             # Query x key_cache GEMV
             self.Vector_Matrix_Mul_score_pim_only_trace(self.cache_k_row_index, seqlen, "breakdown_sa_score")
@@ -1859,10 +1860,21 @@ class TransformerBlockLlama(TransformerBlock):
             scores_aim = self.Vector_Matrix_Mul_score_pim(self.xq_row_index, self.cache_k_row_index, self.trace_attention, "breakdown_sa_score")
 
             # Step 8: Softmax on AiMX
-            # ... (original softmax simulation logic) ...
             head_dim_reciprocal = torch.full(scores_aim.shape, 1 / math.sqrt(self.head_dim))
             self.store_to_DRAM_multi_channel(scores_aim.reshape(self.n_heads, -1), self.scores_row_index, "scores_bank_group_0", False)
             self.store_to_DRAM_multi_channel(head_dim_reciprocal.reshape(self.n_heads, -1), self.scores_row_index, "scores_bank_group_1", False)
+
+            rows_per_score = (seqlen_total - 1) // self.DRAM_column + 1
+            num_scores_per_bank = (self.n_heads - 1) // (self.channels_per_block * 4) + 1
+            for channel in channel_lst:
+                op_trace = channel == 0 and self.trace_attention
+                for score_index in range(num_scores_per_bank):
+                    for row in range(rows_per_score):
+                        if row == rows_per_score - 1:
+                            offset = seqlen_total - row * self.DRAM_column
+                        else:
+                            offset = self.DRAM_column
+                        self.EWMUL(0, channel, channels_required, self.scores_row_index + score_index * rows_per_score + row, 0, (offset - 1) // self.burst_length + 1, op_trace)
             scores_aim = self.load_from_DRAM_multi_channel(self.scores.shape, self.scores_row_index, "scores_bank_group_2", seqlen_total, False)
 
             scores_exp = torch.exp(scores_aim)
@@ -1870,8 +1882,18 @@ class TransformerBlockLlama(TransformerBlock):
             scores_exp_sum_reciprocal = torch.cat([scores_exp_sum_reciprocal for i in range(scores_exp.shape[-1])], dim=-1)
             self.store_to_DRAM_multi_channel(scores_exp.reshape(self.n_heads, -1), self.scores_row_index, "scores_bank_group_0", False)
             self.store_to_DRAM_multi_channel(scores_exp_sum_reciprocal.reshape(self.n_heads, -1), self.scores_row_index, "scores_bank_group_1", False)
+            for channel in channel_lst:
+                op_trace = channel == 0 and self.trace_attention
+                for score_index in range(num_scores_per_bank):
+                    for row in range(rows_per_score):
+                        if row == rows_per_score - 1:
+                            offset = seqlen_total - row * self.DRAM_column
+                        else:
+                            offset = self.DRAM_column
+                        self.EWMUL(0, channel, channels_required, self.scores_row_index + score_index * rows_per_score + row, 0, (offset - 1) // self.burst_length + 1, op_trace)
             scores_aim = self.load_from_DRAM_multi_channel(self.scores.shape, self.scores_row_index, "scores_bank_group_2", seqlen_total, False)
-            compare(scores_aim, self.scores, "SoftMax scores")
+            if debug:
+                compare(scores_aim, self.scores, "SoftMax scores")
 
             # Step 9: Calculate final context vector on AiMX
             output_aim = self.Vector_Matrix_Mul_output_pim(scores_aim, self.cache_v_row_index, self.trace_attention, "breakdown_sa_output").reshape(bsz, seqlen_current, -1)
