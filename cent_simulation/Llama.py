@@ -72,7 +72,7 @@ class TransformerBlockLlama(TransformerBlock):
         bsz, _, _ = self.x.shape
         #sequence length is calculated as the current length of the input sequence being processed. 
         #self.start_pos is the starting position of the current sequence in the input tensor.
-        seqlen = self.start_pos.item() + 1
+        seqlen = self.start_pos + 1
         #if model parallelism is enabled, the total number of banks is scaled by the number of FC devices. i.e. the total number of memory banks available for the fully connected layers is the number of banks per device multiplied by the number of devices
         #channels required is the number of channels required for the current transformer block.
         if self.model_parallel:
@@ -1798,7 +1798,7 @@ class TransformerBlockLlama(TransformerBlock):
         # Steps 1-4: GPU-side processing
         bsz, _, _ = self.x.shape
         seqlen_current = 1  # Decoding one token at a time
-        seqlen_total = self.start_pos.item() + 1
+        seqlen_total = self.start_pos + 1
 
         RMSNorm_x = RMSNorm(self.x, self.SANorm)
 
